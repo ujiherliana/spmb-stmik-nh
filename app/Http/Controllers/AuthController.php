@@ -3,124 +3,87 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
-use Illuminate\View\View;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Http\RedirectResponse;
-use Illuminate\Support\Facades\Session;
+use Illuminate\Support\Facades\Request as FacadesRequest;
 
 class AuthController extends Controller
 {
-    /**
-     * Display a listing of the resource.
-     */
-    public function index()
+    public function __construct()
     {
-        return view('auth.login');
+        $this->middleware('guest')->except([
+            'logout', 'dashboard'
+        ]);
     }
 
-    public function registration(): View
+    public function register()
     {
         return view('auth.registration');
     }
 
-    public function postLogin(Request $request): RedirectResponse
+    public function store(Request $request)
     {
         $request->validate([
-            'email' => 'required',
-            'password' => 'required',
-        ]);
-
-        $credentials = $request->only('email', 'password');
-        if (Auth::attempt($credentials)) {
-            return redirect()->intended('dashboard')
-                ->withSuccess('You have successfully loggedin');
-        }
-
-        return redirect('login')->withSuccess('Oops! You have entered inalid credentials');
-    }
-
-    public function postRegistration(Request $request): RedirectResponse
-    {
-        $request->validate([
-            'name' => 'required',
+            'name' => 'required|string|max:250',
             'email' => 'required|email|unique:users',
             'password' => 'required|min:6|confirmed',
-            're-password' => 'required',
         ]);
 
-        $data = $request->all();
-        $check = $this->create($data);
+        User::create([
+            'name' => $request->name,
+            'email' => $request->email,
+            'password' => Hash::make($request->password)
+        ]);
 
-        return redirect('dashboard.index')->withSuccess('Great! You have successfully logeddin');
+        $credential = $request->only('email', 'password');
+        Auth::attempt($credential);
+        $request->session()->regenerate();
+        return redirect()->route('dashboard')
+            ->withSuccess('You have successfully registered and logged in');
     }
 
-    public function dashboard(): RedirectResponse
+    public function login()
+    {
+        return view('auth.login');
+    }
+
+    public function authenticate(Request $request)
+    {
+        $credential = $request->validate([
+            'email' => 'required|email',
+            'password' => 'required'
+        ]);
+
+        if (Auth::attempt($credential)) {
+            $request->session()->regenerate();
+            return redirect()->route('dashboard')
+                ->withSuccess('You have logged in');
+        }
+
+        return back()->withErrors([
+            'email' => 'you provided credentials do not macth in our record'
+        ])->onlyInput('email');
+    }
+
+    public function dashboard()
     {
         if (Auth::check()) {
             return view('dashboard.index');
         }
 
-        return redirect('login')->withSuccess('Oops! You do not have access');
+        return redirect()->route('login')
+            ->withErrors([
+                'email' => 'Please login to access the dashboard'
+            ])->onlyInput('email');
     }
 
-    /**
-     * Show the form for creating a new resource.
-     */
-    public function create(array $data)
+    public function logout(Request $request)
     {
-        return User::create([
-            'name' => $data['name'],
-            'email' => $data['email'],
-            'password' => Hash::make($data['password'])
-        ]);
-    }
-
-    public function logout(): RedirectResponse
-    {
-        Session::flush();
         Auth::logout();
-
-        return redirect('login');
-    }
-    /**
-     * Store a newly created resource in storage.
-     */
-    public function store(Request $request)
-    {
-        //
-    }
-
-    /**
-     * Display the specified resource.
-     */
-    public function show(string $id)
-    {
-        //
-    }
-
-    /**
-     * Show the form for editing the specified resource.
-     */
-    public function edit(string $id)
-    {
-        //
-    }
-
-    /**
-     * Update the specified resource in storage.
-     */
-    public function update(Request $request, string $id)
-    {
-        //
-    }
-
-    /**
-     * Remove the specified resource from storage.
-     */
-    public function destroy(string $id)
-    {
-        //
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
+        return redirect()->route('login')
+            ->withSuccess('you have logout successfull');
     }
 }
